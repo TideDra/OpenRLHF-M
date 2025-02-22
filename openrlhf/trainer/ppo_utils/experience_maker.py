@@ -738,6 +738,7 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             action_mask,
             info,
             kl,
+            visual_inputs=visual inputs
         )
 
         self.actor.train()  # reset model state
