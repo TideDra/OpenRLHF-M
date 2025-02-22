@@ -359,6 +359,7 @@ class PPOTrainer(ABC):
             ).unsqueeze(0)
             if self.args.use_kl_loss:
                 base_action_log_probs = torch.cat(experience.base_action_log_probs, dim=0).unsqueeze(0)
+            visual_inputs = experience.visual_inputs
         else:
             sequences = experience.sequences
             old_action_log_probs = experience.action_log_probs
@@ -368,6 +369,7 @@ class PPOTrainer(ABC):
             attention_mask = experience.attention_mask
             if self.args.use_kl_loss:
                 base_action_log_probs = experience.base_action_log_probs
+            visual_inputs = experience.visual_inputs
 
         # actor loss
         action_log_probs, output = self.actor(
@@ -474,6 +476,7 @@ class PPOTrainer(ABC):
             attention_mask = torch.cat(
                 [torch.full_like(s, i + 1) for i, s in enumerate(experience.sequences)], dim=0
             ).unsqueeze(0)
+            visual_inputs = experience.visual_inputs
         else:
             sequences = experience.sequences
             old_values = experience.values
