@@ -2,6 +2,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 
 
 def compute_approx_kl(
@@ -130,3 +131,176 @@ def unpacking_samples(values: torch.Tensor, packed_seqlens: list[int]):
         unpacked_values.append(values[offset : offset + seqlen])
         offset += seqlen
     return unpacked_values
+
+
+def load_qwen2vl_for_classification(
+    model_name_or_path,
+    num_classes=2,
+    use_flash_attention_2=False,
+    bf16=False,
+    load_in_4bit=False,
+    lora_rank=None,
+    lora_alpha=16,
+    lora_dropout=0.0,
+    target_modules=None,
+    vision_tower_lora=False,
+):
+    """
+    Load Qwen2VL model for classification tasks
+    
+    Args:
+        model_name_or_path: Model name or path
+        num_classes: Number of classes
+        use_flash_attention_2: Whether to use Flash Attention 2
+        bf16: Whether to use bfloat16 precision
+        load_in_4bit: Whether to load in 4-bit quantization
+        lora_rank: LoRA rank, None means not using LoRA
+        lora_alpha: LoRA alpha parameter
+        lora_dropout: LoRA dropout probability
+        target_modules: LoRA target modules
+        vision_tower_lora: Whether to apply LoRA to the vision tower
+        
+    Returns:
+        model: Classification model
+        tokenizer: Tokenizer
+    """
+    import torch
+    import torch.nn as nn
+    from transformers import AutoTokenizer, AutoProcessor, AutoConfig, AutoModelForVisionLanguageModeling
+    import logging
+    
+    logger = logging.getLogger(__name__)
+    
+    class Qwen2VLForClassification(nn.Module):
+        def __init__(self, base_model, config, num_labels):
+            super().__init__()
+            self.base_model = base_model
+            self.config = config
+            self.num_labels = num_labels
+            
+            hidden_size = config.hidden_size
+            self.classifier = nn.Sequential(
+                nn.LayerNorm(hidden_size),
+                nn.Dropout(0.1),
+                nn.Linear(hidden_size, num_labels)
+            )
+            
+            self._init_weights(self.classifier)
+            
+        def _init_weights(self, module):
+            """Initialize weights"""
+            if isinstance(module, nn.Linear):
+                module.weight.data.normal_(mean=0.0, std=0.02)
+                if module.bias is not None:
+                    module.bias.data.zero_()
+            elif isinstance(module, nn.LayerNorm):
+                module.bias.data.zero_()
+                module.weight.data.fill_(1.0)
+        
+        def forward(self, input_ids=None, attention_mask=None, pixel_values=None, labels=None, **kwargs):
+            """Forward pass"""
+            outputs = self.base_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                pixel_values=pixel_values,
+                **kwargs
+            )
+            
+            last_hidden_state = outputs.last_hidden_state
+            pooled_output = last_hidden_state[:, 0, :]  # Output at [CLS] position
+            
+            logits = self.classifier(pooled_output)
+            
+            loss = None
+            if labels is not None:
+                loss_fct = nn.CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            
+            return type('ModelOutput', (), {
+                'loss': loss,
+                'logits': logits,
+                'hidden_states': outputs.hidden_states if hasattr(outputs, 'hidden_states') else None,
+                'attentions': outputs.attentions if hasattr(outputs, 'attentions') else None,
+                'last_hidden_state': last_hidden_state,
+            })
+    
+    logger.info(f"Loading tokenizer and processor: {model_name_or_path}")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        processor = AutoProcessor.from_pretrained(model_name_or_path)
+    except Exception as e:
+        logger.error(f"Failed to load tokenizer or processor: {e}")
+        raise
+    
+    logger.info("Configuring model parameters")
+    config_kwargs = {}
+    
+    if bf16:
+        config_kwargs["torch_dtype"] = torch.bfloat16
+    else:
+        config_kwargs["torch_dtype"] = torch.float16
+    
+    if use_flash_attention_2:
+        config_kwargs["attn_implementation"] = "flash_attention_2"
+    
+    if load_in_4bit:
+        from transformers import BitsAndBytesConfig
+        
+        logger.info("Loading model with 4-bit quantization")
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+        config_kwargs["quantization_config"] = quantization_config
+    
+    logger.info(f"Loading base model: {model_name_or_path}")
+    try:
+        config = AutoConfig.from_pretrained(model_name_or_path)
+        base_model = AutoModelForVisionLanguageModeling.from_pretrained(
+            model_name_or_path,
+            **config_kwargs,
+        )
+    except Exception as e:
+        logger.error(f"Failed to load base model: {e}")
+        raise
+    
+    logger.info(f"Creating classification model with number of classes: {num_classes}")
+    model = Qwen2VLForClassification(base_model, config, num_classes)
+    
+    if lora_rank is not None and lora_rank > 0:
+        from peft import LoraConfig, get_peft_model, TaskType
+        
+        logger.info(f"Applying LoRA with rank: {lora_rank}, alpha: {lora_alpha}")
+        
+        if target_modules is None or target_modules == "all-linear":
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        
+        lora_config_args = {
+            "r": lora_rank,
+            "lora_alpha": lora_alpha,
+            "target_modules": target_modules,
+            "lora_dropout": lora_dropout,
+            "bias": "none",
+            "task_type": TaskType.SEQ_CLS,
+        }
+        
+        if vision_tower_lora:
+            logger.info("Applying LoRA to vision tower")
+            lora_config_args["modules_to_save"] = ["classifier", "vision_tower"]
+        else:
+            lora_config_args["modules_to_save"] = ["classifier"]
+        
+        lora_config = LoraConfig(**lora_config_args)
+        
+        try:
+            model = get_peft_model(model, lora_config)
+            model.print_trainable_parameters()
+        except Exception as e:
+            logger.error(f"Failed to apply LoRA: {e}")
+            raise
+    
+    model.processor = processor
+    
+    return model, tokenizer
