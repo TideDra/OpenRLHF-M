@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 import os
 import time
 from typing import Dict, List, Optional, Union, Any
@@ -91,6 +89,24 @@ class MultimodalClassificationTrainer(ABC):
         self.best_accuracy = 0.0
         self.best_step = 0
     
+    def validate_args(self, args):
+        """
+            Validate the batch size
+        Args:
+            args: Training parameters
+        """
+        if hasattr(args, 'n_rollout') and hasattr(args, 'ring_head') and hasattr(args, 'world_size'):
+            expected_micro_batch = args.batch_size * args.ring_head * args.n_rollout // args.world_size
+            if hasattr(args, 'micro_batch_size') and args.micro_batch_size != expected_micro_batch:
+                logger.warning(
+                    f"micro_batch_size should be equal to batch_size * ring_head * n_rollout // world_size, "
+                    f"current value is {args.micro_batch_size}, expected value is {expected_micro_batch}"
+                )
+                args.micro_batch_size = expected_micro_batch
+                logger.info(f"micro_batch_size has been automatically corrected to {expected_micro_batch}")
+        
+        return args
+    
     def fit(self, args, consumed_samples=0, num_update_steps_per_epoch=None):
         """
         Train the model
@@ -100,6 +116,8 @@ class MultimodalClassificationTrainer(ABC):
             consumed_samples: Number of consumed samples
             num_update_steps_per_epoch: Number of update steps per epoch
         """
+        args = self.validate_args(args)
+        
         if args.use_wandb and (not dist.is_initialized() or dist.get_rank() == 0):
             import wandb
             if args.use_wandb.lower() == "true":
@@ -154,9 +172,6 @@ class MultimodalClassificationTrainer(ABC):
                 )
                 
                 loss = outputs.loss
-                
-                if self.aux_loss_coef > 0 and hasattr(outputs, "aux_loss"):
-                    loss = loss + self.aux_loss_coef * outputs.aux_loss
                 
                 self.strategy.backward(loss, self.model, self.optim)
                 

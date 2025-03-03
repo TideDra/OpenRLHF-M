@@ -230,91 +230,61 @@ def load_multimodal_model_for_classification(
                 'last_hidden_state': last_hidden_state,
             })
     
-    if model_type.lower() == "qwen2vl":
-        from transformers import AutoModelForVisionLanguageModeling
-        
-        logger.info(f"Loading Qwen2VL model: {model_name_or_path}")
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        processor = AutoProcessor.from_pretrained(model_name_or_path)
-        
-        config_kwargs = {}
-        if bf16:
-            config_kwargs["torch_dtype"] = torch.bfloat16
-        else:
-            config_kwargs["torch_dtype"] = torch.float16
-        
-        if use_flash_attention_2:
-            config_kwargs["attn_implementation"] = "flash_attention_2"
-        
-        if load_in_4bit:
-            from transformers import BitsAndBytesConfig
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-            )
-            config_kwargs["quantization_config"] = quantization_config
-        
-        config = AutoConfig.from_pretrained(model_name_or_path)
-        base_model = AutoModelForVisionLanguageModeling.from_pretrained(
-            model_name_or_path,
-            **config_kwargs,
-        )
-        
-    elif model_type.lower() == "llava":
-        from transformers import LlavaForConditionalGeneration
-        
-        logger.info(f"Loading LLaVA model: {model_name_or_path}")
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        processor = AutoProcessor.from_pretrained(model_name_or_path)
-        
-        config_kwargs = {}
-        if bf16:
-            config_kwargs["torch_dtype"] = torch.bfloat16
-        else:
-            config_kwargs["torch_dtype"] = torch.float16
-        
-        if use_flash_attention_2:
-            config_kwargs["attn_implementation"] = "flash_attention_2"
-        
-        if load_in_4bit:
-            from transformers import BitsAndBytesConfig
-            quantization_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-            )
-            config_kwargs["quantization_config"] = quantization_config
-        
-        config = AutoConfig.from_pretrained(model_name_or_path)
-        base_model = LlavaForConditionalGeneration.from_pretrained(
-            model_name_or_path,
-            **config_kwargs,
-        )
-        
-    elif model_type.lower() == "blip2":
-        from transformers import Blip2ForConditionalGeneration
-        
-        logger.info(f"Loading BLIP-2 model: {model_name_or_path}")
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
-        processor = AutoProcessor.from_pretrained(model_name_or_path)
-        
-        config_kwargs = {}
-        if bf16:
-            config_kwargs["torch_dtype"] = torch.bfloat16
-        else:
-            config_kwargs["torch_dtype"] = torch.float16
-        
-        config = AutoConfig.from_pretrained(model_name_or_path)
-        base_model = Blip2ForConditionalGeneration.from_pretrained(
-            model_name_or_path,
-            **config_kwargs,
-        )
-        
+    config_kwargs = {}
+    if bf16:
+        config_kwargs["torch_dtype"] = torch.bfloat16
     else:
+        config_kwargs["torch_dtype"] = torch.float16
+    
+    if use_flash_attention_2:
+        config_kwargs["attn_implementation"] = "flash_attention_2"
+    
+    if load_in_4bit:
+        from transformers import BitsAndBytesConfig
+        config_kwargs["quantization_config"] = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4",
+        )
+    
+    MODEL_CLASSES = {
+        "qwen2vl": {
+            "model_class": "AutoModelForVisionLanguageModeling",
+            "import_path": "transformers",
+            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+        },
+        "llava": {
+            "model_class": "LlavaForConditionalGeneration",
+            "import_path": "transformers",
+            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"]
+        },
+        "blip2": {
+            "model_class": "Blip2ForConditionalGeneration",
+            "import_path": "transformers",
+            "target_modules": ["query", "key", "value", "output"]
+        }
+    }
+    
+    model_type = model_type.lower()
+    if model_type not in MODEL_CLASSES:
         raise ValueError(f"Unsupported model type: {model_type}")
+    
+    model_info = MODEL_CLASSES[model_type]
+    
+    import importlib
+    module = importlib.import_module(model_info["import_path"])
+    model_class = getattr(module, model_info["model_class"])
+    
+    logger.info(f"Loading {model_type.upper()} model: {model_name_or_path}")
+    tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+    processor = AutoProcessor.from_pretrained(model_name_or_path)
+    config = AutoConfig.from_pretrained(model_name_or_path)
+    
+    base_model = model_class.from_pretrained(
+        model_name_or_path,
+        **config_kwargs,
+    )
     
     model = MultimodalModelForClassification(base_model, config, num_classes)
     
@@ -324,31 +294,20 @@ def load_multimodal_model_for_classification(
         logger.info(f"Applying LoRA with rank: {lora_rank}, alpha: {lora_alpha}")
         
         if target_modules is None or target_modules == "all-linear":
-            if model_type.lower() == "qwen2vl":
-                target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-            elif model_type.lower() == "llava":
-                target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
-            elif model_type.lower() == "blip2":
-                target_modules = ["query", "key", "value", "output"]
-            else:
-                target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+            target_modules = model_info["target_modules"]
         
-        lora_config_args = {
-            "r": lora_rank,
-            "lora_alpha": lora_alpha,
-            "target_modules": target_modules,
-            "lora_dropout": lora_dropout,
-            "bias": "none",
-            "task_type": TaskType.SEQ_CLS,
-        }
+        lora_config = LoraConfig(
+            r=lora_rank,
+            lora_alpha=lora_alpha,
+            target_modules=target_modules,
+            lora_dropout=lora_dropout,
+            bias="none",
+            task_type=TaskType.SEQ_CLS,
+            modules_to_save=["classifier", "vision_tower"] if vision_tower_lora else ["classifier"]
+        )
         
         if vision_tower_lora:
             logger.info("Applying LoRA to vision tower")
-            lora_config_args["modules_to_save"] = ["classifier", "vision_tower"]
-        else:
-            lora_config_args["modules_to_save"] = ["classifier"]
-        
-        lora_config = LoraConfig(**lora_config_args)
         
         model = get_peft_model(model, lora_config)
         model.print_trainable_parameters()
