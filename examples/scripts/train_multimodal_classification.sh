@@ -1,18 +1,21 @@
 #!/bin/bash
 set -x
 
+MODEL_TYPE=${MODEL_TYPE:-qwen2vl}  # 默认使用qwen2vl，可以通过环境变量覆盖
+
 read -r -d '' training_commands <<EOF
-openrlhf.cli.train_qwen2vl_classification \
-   --save_path ./checkpoint/qwen2vl-classification \
+openrlhf.cli.train_multimodal_classification \
+   --save_path ./checkpoint/${MODEL_TYPE}-classification \
    --save_steps 1000 \
    --logging_steps 10 \
    --eval_steps 500 \
    --train_batch_size 32 \
    --micro_train_batch_size 4 \
    --pretrain Qwen/Qwen2-VL-7B \
+   --model_type ${MODEL_TYPE} \
    --bf16 \
    --max_len 2048 \
-   --dataset multimodal_classification_dataset \
+   --train_data multimodal_classification_dataset \
    --input_key image_text \
    --label_key label \
    --num_classes 10 \

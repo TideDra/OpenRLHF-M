@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import argparse
 import math
 import os
@@ -14,7 +11,7 @@ from transformers import get_scheduler, set_seed
 from sklearn.metrics import classification_report, confusion_matrix
 
 from openrlhf.datasets import MultimodalClassificationDataset
-from openrlhf.models import load_qwen2vl_for_classification
+from openrlhf.models import load_multimodal_model_for_classification
 from openrlhf.trainer import MultimodalClassificationTrainer
 from openrlhf.utils import blending_datasets, get_strategy, get_tokenizer
 
@@ -32,7 +29,6 @@ def setup_logging(args):
         level=log_level,
     )
     
-    # Create file handler
     if args.log_file:
         file_handler = logging.FileHandler(args.log_file)
         file_handler.setLevel(log_level)
@@ -60,7 +56,7 @@ def validate_args(args):
         logger.warning(f"Setting train_batch_size to {args.train_batch_size}")
 
 def train(args):
-    """Train Qwen2VL classification model"""
+    """Train Multimodal classification model"""
     # Set up logging
     setup_logging(args)
     
@@ -86,8 +82,9 @@ def train(args):
     logger.info(f"Loading model: {args.pretrain}")
     
     try:
-        model, tokenizer = load_qwen2vl_for_classification(
+        model, tokenizer = load_multimodal_model_for_classification(
             args.pretrain,
+            model_type=args.model_type,
             num_classes=args.num_classes,
             use_flash_attention_2=args.flash_attn,
             bf16=args.bf16,
@@ -389,6 +386,9 @@ if __name__ == "__main__":
     parser.add_argument("--verbose", action="store_true", default=False, help="Output verbose logs")
     parser.add_argument("--log_file", type=str, default=None, help="Log file path")
     parser.add_argument("--use_ms", action="store_true", default=False, help="Use ModelScope")
+
+    # New parameter for model type
+    parser.add_argument("--model_type", type=str, default="qwen2vl", help="模型类型，支持qwen2vl、llava、blip2等")
 
     args = parser.parse_args()
 

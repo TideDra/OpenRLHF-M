@@ -133,8 +133,9 @@ def unpacking_samples(values: torch.Tensor, packed_seqlens: list[int]):
     return unpacked_values
 
 
-def load_qwen2vl_for_classification(
+def load_multimodal_model_for_classification(
     model_name_or_path,
+    model_type="qwen2vl", 
     num_classes=2,
     use_flash_attention_2=False,
     bf16=False,
@@ -146,11 +147,12 @@ def load_qwen2vl_for_classification(
     vision_tower_lora=False,
 ):
     """
-    Load Qwen2VL model for classification tasks
+    Load multimodal model for classification tasks
     
     Args:
         model_name_or_path: Model name or path
-        num_classes: Number of classes
+        model_type: Model type, supports "qwen2vl", "llava", "blip2", etc.
+        num_classes: Number of classification classes
         use_flash_attention_2: Whether to use Flash Attention 2
         bf16: Whether to use bfloat16 precision
         load_in_4bit: Whether to load in 4-bit quantization
@@ -166,12 +168,12 @@ def load_qwen2vl_for_classification(
     """
     import torch
     import torch.nn as nn
-    from transformers import AutoTokenizer, AutoProcessor, AutoConfig, AutoModelForVisionLanguageModeling
+    from transformers import AutoTokenizer, AutoProcessor, AutoConfig
     import logging
     
     logger = logging.getLogger(__name__)
     
-    class Qwen2VLForClassification(nn.Module):
+    class MultimodalModelForClassification(nn.Module):
         def __init__(self, base_model, config, num_labels):
             super().__init__()
             self.base_model = base_model
@@ -206,8 +208,12 @@ def load_qwen2vl_for_classification(
                 **kwargs
             )
             
-            last_hidden_state = outputs.last_hidden_state
-            pooled_output = last_hidden_state[:, 0, :]  # Output at [CLS] position
+            if hasattr(outputs, "last_hidden_state"):
+                last_hidden_state = outputs.last_hidden_state
+            else:
+                last_hidden_state = getattr(outputs, "hidden_states", outputs[0])
+            
+            pooled_output = last_hidden_state[:, 0, :]  
             
             logits = self.classifier(pooled_output)
             
@@ -224,50 +230,93 @@ def load_qwen2vl_for_classification(
                 'last_hidden_state': last_hidden_state,
             })
     
-    logger.info(f"Loading tokenizer and processor: {model_name_or_path}")
-    try:
+    if model_type.lower() == "qwen2vl":
+        from transformers import AutoModelForVisionLanguageModeling
+        
+        logger.info(f"Loading Qwen2VL model: {model_name_or_path}")
         tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
         processor = AutoProcessor.from_pretrained(model_name_or_path)
-    except Exception as e:
-        logger.error(f"Failed to load tokenizer or processor: {e}")
-        raise
-    
-    logger.info("Configuring model parameters")
-    config_kwargs = {}
-    
-    if bf16:
-        config_kwargs["torch_dtype"] = torch.bfloat16
-    else:
-        config_kwargs["torch_dtype"] = torch.float16
-    
-    if use_flash_attention_2:
-        config_kwargs["attn_implementation"] = "flash_attention_2"
-    
-    if load_in_4bit:
-        from transformers import BitsAndBytesConfig
         
-        logger.info("Loading model with 4-bit quantization")
-        quantization_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-        )
-        config_kwargs["quantization_config"] = quantization_config
-    
-    logger.info(f"Loading base model: {model_name_or_path}")
-    try:
+        config_kwargs = {}
+        if bf16:
+            config_kwargs["torch_dtype"] = torch.bfloat16
+        else:
+            config_kwargs["torch_dtype"] = torch.float16
+        
+        if use_flash_attention_2:
+            config_kwargs["attn_implementation"] = "flash_attention_2"
+        
+        if load_in_4bit:
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            config_kwargs["quantization_config"] = quantization_config
+        
         config = AutoConfig.from_pretrained(model_name_or_path)
         base_model = AutoModelForVisionLanguageModeling.from_pretrained(
             model_name_or_path,
             **config_kwargs,
         )
-    except Exception as e:
-        logger.error(f"Failed to load base model: {e}")
-        raise
+        
+    elif model_type.lower() == "llava":
+        from transformers import LlavaForConditionalGeneration
+        
+        logger.info(f"Loading LLaVA model: {model_name_or_path}")
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        processor = AutoProcessor.from_pretrained(model_name_or_path)
+        
+        config_kwargs = {}
+        if bf16:
+            config_kwargs["torch_dtype"] = torch.bfloat16
+        else:
+            config_kwargs["torch_dtype"] = torch.float16
+        
+        if use_flash_attention_2:
+            config_kwargs["attn_implementation"] = "flash_attention_2"
+        
+        if load_in_4bit:
+            from transformers import BitsAndBytesConfig
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+            )
+            config_kwargs["quantization_config"] = quantization_config
+        
+        config = AutoConfig.from_pretrained(model_name_or_path)
+        base_model = LlavaForConditionalGeneration.from_pretrained(
+            model_name_or_path,
+            **config_kwargs,
+        )
+        
+    elif model_type.lower() == "blip2":
+        from transformers import Blip2ForConditionalGeneration
+        
+        logger.info(f"Loading BLIP-2 model: {model_name_or_path}")
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        processor = AutoProcessor.from_pretrained(model_name_or_path)
+        
+        config_kwargs = {}
+        if bf16:
+            config_kwargs["torch_dtype"] = torch.bfloat16
+        else:
+            config_kwargs["torch_dtype"] = torch.float16
+        
+        config = AutoConfig.from_pretrained(model_name_or_path)
+        base_model = Blip2ForConditionalGeneration.from_pretrained(
+            model_name_or_path,
+            **config_kwargs,
+        )
+        
+    else:
+        raise ValueError(f"Unsupported model type: {model_type}")
     
-    logger.info(f"Creating classification model with number of classes: {num_classes}")
-    model = Qwen2VLForClassification(base_model, config, num_classes)
+    model = MultimodalModelForClassification(base_model, config, num_classes)
     
     if lora_rank is not None and lora_rank > 0:
         from peft import LoraConfig, get_peft_model, TaskType
@@ -275,7 +324,14 @@ def load_qwen2vl_for_classification(
         logger.info(f"Applying LoRA with rank: {lora_rank}, alpha: {lora_alpha}")
         
         if target_modules is None or target_modules == "all-linear":
-            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            if model_type.lower() == "qwen2vl":
+                target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+            elif model_type.lower() == "llava":
+                target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+            elif model_type.lower() == "blip2":
+                target_modules = ["query", "key", "value", "output"]
+            else:
+                target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
         
         lora_config_args = {
             "r": lora_rank,
@@ -294,13 +350,12 @@ def load_qwen2vl_for_classification(
         
         lora_config = LoraConfig(**lora_config_args)
         
-        try:
-            model = get_peft_model(model, lora_config)
-            model.print_trainable_parameters()
-        except Exception as e:
-            logger.error(f"Failed to apply LoRA: {e}")
-            raise
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
     
     model.processor = processor
     
     return model, tokenizer
+
+def load_qwen2vl_for_classification(*args, **kwargs):
+    return load_multimodal_model_for_classification(model_type="qwen2vl", *args, **kwargs)
