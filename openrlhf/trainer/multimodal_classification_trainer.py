@@ -31,7 +31,6 @@ class MultimodalClassificationTrainer(ABC):
         save_steps: Save checkpoint every certain steps
         eval_steps: Evaluate every certain steps
         logging_steps: Log every certain steps
-        aux_loss_coef: Auxiliary loss coefficient
         save_hf_ckpt: Whether to save HuggingFace format checkpoint
         disable_ds_ckpt: Whether to disable DeepSpeed checkpoint
         label_names: List of label names
@@ -54,7 +53,6 @@ class MultimodalClassificationTrainer(ABC):
         save_steps=None,
         eval_steps=None,
         logging_steps=None,
-        aux_loss_coef=0.0,
         save_hf_ckpt=False,
         disable_ds_ckpt=False,
         label_names=None,
@@ -74,7 +72,6 @@ class MultimodalClassificationTrainer(ABC):
         self.save_steps = save_steps
         self.eval_steps = eval_steps
         self.logging_steps = logging_steps
-        self.aux_loss_coef = aux_loss_coef
         self.save_hf_ckpt = save_hf_ckpt
         self.disable_ds_ckpt = disable_ds_ckpt
         

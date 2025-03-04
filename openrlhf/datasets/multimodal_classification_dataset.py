@@ -26,6 +26,7 @@ class MultimodalClassificationDataset(Dataset):
         image_folder: Path to the image folder, if provided, will be concatenated with the image path
         image_size: Size of the image
         use_augmentation: Whether to use data augmentation
+        model_type: Type of the model, e.g., "qwen2vl", "generic"
     """
     
     def __init__(
@@ -40,6 +41,7 @@ class MultimodalClassificationDataset(Dataset):
         image_folder=None,
         image_size=448,
         use_augmentation=False,
+        model_type="generic",
     ):
         self.dataset = dataset
         self.tokenizer = tokenizer
@@ -51,6 +53,7 @@ class MultimodalClassificationDataset(Dataset):
         self.image_folder = image_folder
         self.image_size = image_size
         self.use_augmentation = use_augmentation
+        self.model_type = model_type.lower()
         
         if hasattr(tokenizer, "processor"):
             self.processor = tokenizer.processor
@@ -71,6 +74,9 @@ class MultimodalClassificationDataset(Dataset):
         """Get image transformations with data augmentation"""
         from torchvision import transforms
         
+        if self.model_type == "qwen2vl" and self.processor is not None:
+            return None
+        
         return transforms.Compose([
             transforms.Resize((self.image_size, self.image_size)),
             transforms.RandomHorizontalFlip(),
@@ -83,6 +89,9 @@ class MultimodalClassificationDataset(Dataset):
     def _get_eval_transform(self):
         """Get image transformations for evaluation"""
         from torchvision import transforms
+        
+        if self.model_type == "qwen2vl" and self.processor is not None:
+            return None
         
         return transforms.Compose([
             transforms.Resize((self.image_size, self.image_size)),
@@ -108,6 +117,40 @@ class MultimodalClassificationDataset(Dataset):
         except Exception as e:
             logger.error(f"Cannot load image {image_path}: {e}")
             image = Image.new("RGB", (self.image_size, self.image_size), color=(128, 128, 128))
+        
+        if self.model_type == "qwen2vl" and self.processor is not None:
+            try:
+                encoding = self.processor(
+                    text=text,
+                    images=image,
+                    padding="max_length",
+                    truncation=True,
+                    max_length=self.max_len,
+                    return_tensors="pt"
+                )
+                
+                input_ids = encoding.input_ids[0]
+                attention_mask = encoding.attention_mask[0]
+                pixel_values = encoding.pixel_values[0]
+                
+                label = item[self.label_key]
+                if isinstance(label, str):
+                    try:
+                        label = int(label)
+                    except ValueError:
+                        logger.warning(f"Unable to convert label '{label}' to integer, using 0 as default")
+                        label = 0
+                
+                return {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "pixel_values": pixel_values,
+                    "labels": torch.tensor(label, dtype=torch.long),
+                    "text": text,
+                    "image_path": image_path,
+                }
+            except Exception as e:
+                logger.error(f"Qwen2VL processing failed: {e}, falling back to default processing")
         
         if self.transform is not None:
             try:
@@ -151,8 +194,8 @@ class MultimodalClassificationDataset(Dataset):
             "attention_mask": encoding.attention_mask[0],
             "pixel_values": image_tensor,
             "labels": torch.tensor(label, dtype=torch.long),
-            "text": text,  # Keep original text for debugging
-            "image_path": image_path,  # Keep image path for debugging
+            "text": text,
+            "image_path": image_path,
         }
     
     def collate_fn(self, batch):
@@ -170,7 +213,7 @@ class MultimodalClassificationDataset(Dataset):
         texts = [item["text"] for item in batch]
         image_paths = [item["image_path"] for item in batch]
         
-        return {
+        result = {
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "pixel_values": pixel_values,
@@ -178,3 +221,16 @@ class MultimodalClassificationDataset(Dataset):
             "texts": texts,
             "image_paths": image_paths,
         }
+        
+        if self.model_type == "qwen2vl":
+            if "image_grid_thw" in batch[0]:
+                image_grid_thw = torch.stack([item["image_grid_thw"] for item in batch])
+                image_grid_thw = image_grid_thw.to(self.strategy.device)
+                result["image_grid_thw"] = image_grid_thw
+            
+            if "video_grid_thw" in batch[0]:
+                video_grid_thw = torch.stack([item["video_grid_thw"] for item in batch])
+                video_grid_thw = video_grid_thw.to(self.strategy.device)
+                result["video_grid_thw"] = video_grid_thw
+        
+        return result

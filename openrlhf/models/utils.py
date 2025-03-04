@@ -135,7 +135,6 @@ def unpacking_samples(values: torch.Tensor, packed_seqlens: list[int]):
 
 def load_multimodal_model_for_classification(
     model_name_or_path,
-    model_type="qwen2vl", 
     num_classes=2,
     use_flash_attention_2=False,
     bf16=False,
@@ -151,7 +150,6 @@ def load_multimodal_model_for_classification(
     
     Args:
         model_name_or_path: Model name or path
-        model_type: Model type, supports "qwen2vl", "llava", "blip2", etc.
         num_classes: Number of classification classes
         use_flash_attention_2: Whether to use Flash Attention 2
         bf16: Whether to use bfloat16 precision
@@ -168,7 +166,7 @@ def load_multimodal_model_for_classification(
     """
     import torch
     import torch.nn as nn
-    from transformers import AutoTokenizer, AutoProcessor, AutoConfig
+    from transformers import AutoTokenizer, AutoProcessor, AutoConfig, AutoModel
     import logging
     
     logger = logging.getLogger(__name__)
@@ -248,43 +246,32 @@ def load_multimodal_model_for_classification(
             bnb_4bit_quant_type="nf4",
         )
     
-    MODEL_CLASSES = {
-        "qwen2vl": {
-            "model_class": "AutoModelForVisionLanguageModeling",
-            "import_path": "transformers",
-            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
-        },
-        "llava": {
-            "model_class": "LlavaForConditionalGeneration",
-            "import_path": "transformers",
-            "target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"]
-        },
-        "blip2": {
-            "model_class": "Blip2ForConditionalGeneration",
-            "import_path": "transformers",
-            "target_modules": ["query", "key", "value", "output"]
-        }
-    }
-    
-    model_type = model_type.lower()
-    if model_type not in MODEL_CLASSES:
-        raise ValueError(f"Unsupported model type: {model_type}")
-    
-    model_info = MODEL_CLASSES[model_type]
-    
-    import importlib
-    module = importlib.import_module(model_info["import_path"])
-    model_class = getattr(module, model_info["model_class"])
-    
-    logger.info(f"Loading {model_type.upper()} model: {model_name_or_path}")
+    logger.info(f"Loading multimodal model: {model_name_or_path}")
     tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     processor = AutoProcessor.from_pretrained(model_name_or_path)
     config = AutoConfig.from_pretrained(model_name_or_path)
     
-    base_model = model_class.from_pretrained(
-        model_name_or_path,
-        **config_kwargs,
-    )
+    try:
+        from transformers import AutoModelForVisionLanguageModeling
+        base_model = AutoModelForVisionLanguageModeling.from_pretrained(
+            model_name_or_path,
+            **config_kwargs,
+        )
+        logger.info("Loaded model using AutoModelForVisionLanguageModeling")
+    except (ImportError, ValueError):
+        try:
+            from transformers import AutoModelForVisionTextDual
+            base_model = AutoModelForVisionTextDual.from_pretrained(
+                model_name_or_path,
+                **config_kwargs,
+            )
+            logger.info("Loaded model using AutoModelForVisionTextDual")
+        except (ImportError, ValueError):
+            logger.info("Falling back to generic AutoModel")
+            base_model = AutoModel.from_pretrained(
+                model_name_or_path,
+                **config_kwargs,
+            )
     
     model = MultimodalModelForClassification(base_model, config, num_classes)
     
@@ -294,7 +281,7 @@ def load_multimodal_model_for_classification(
         logger.info(f"Applying LoRA with rank: {lora_rank}, alpha: {lora_alpha}")
         
         if target_modules is None or target_modules == "all-linear":
-            target_modules = model_info["target_modules"]
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
         
         lora_config = LoraConfig(
             r=lora_rank,
@@ -315,6 +302,3 @@ def load_multimodal_model_for_classification(
     model.processor = processor
     
     return model, tokenizer
-
-def load_qwen2vl_for_classification(*args, **kwargs):
-    return load_multimodal_model_for_classification(model_type="qwen2vl", *args, **kwargs)
