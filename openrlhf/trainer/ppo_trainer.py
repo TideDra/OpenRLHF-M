@@ -359,7 +359,6 @@ class PPOTrainer(ABC):
             attention_mask = torch.cat(
                 [torch.full_like(s, i + 1) for i, s in enumerate(experience.sequences)], dim=0
             ).unsqueeze(0)
-            visual_inputs = experience.visual_inputs
             # pad seq makes the sequence a multiple of ring_attention_size.
             if self.strategy.ring_attn_group is not None:
                 pad_len, sequences, attention_mask, num_actions, packed_seq_lens = pad_sequences(
@@ -379,7 +378,6 @@ class PPOTrainer(ABC):
             num_actions = experience.action_mask.size(1)
             packed_seq_lens = None
             attention_mask = experience.attention_mask
-            visual_inputs = experience.visual_inputs
             if self.args.use_kl_loss and experience.base_action_log_probs is not None:
                 base_action_log_probs = experience.base_action_log_probs
             visual_inputs = experience.visual_inputs
@@ -422,7 +420,7 @@ class PPOTrainer(ABC):
                     action_log_probs,
                     base_action_log_probs,
                     experience.action_mask,
-                    use_kl_estimator_k3 = self.args.use_kl_estimator_k3,
+                    kl_estimator = self.args.kl_estimator,
                 )
             else:
                 kl = torch.zeros_like(action_log_probs, dtype=action_log_probs.dtype, device = action_log_probs.device)

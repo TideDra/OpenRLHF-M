@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import transformers
 from transformers import Qwen2_5_VLForConditionalGeneration
 
-
 RING_ATTN_GROUP = None
 
 

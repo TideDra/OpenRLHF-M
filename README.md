@@ -1,21 +1,22 @@
 <div align="center">
-    <img alt="OpenRLHF logo" src="./docs/logo.png" style="height: 140px;" />
+<p align="center">
+<img alt="" src="./docs/logo.jpg" style="display: inline-block; height: 140px" />
+</p>
 </div>
+
 <div align="center">
 <p align="center">
-      <a href="https://github.com/OpenRLHF/OpenRLHF/graphs/contributors">
-        <img alt="GitHub Contributors" src="https://img.shields.io/github/contributors/OpenRLHF/OpenRLHF" />
+      <a href="https://github.com/OpenRLHF/OpenRLHF-M/graphs/contributors">
+        <img alt="GitHub Contributors" src="https://img.shields.io/github/contributors/OpenRLHF/OpenRLHF-M" />
       </a>
-      <a href="https://github.com/OpenRLHF/OpenRLHF/issues">
-        <img alt="Issues" src="https://img.shields.io/github/issues/OpenRLHF/OpenRLHF?color=0088ff" />
+      <a href="https://github.com/OpenRLHF/OpenRLHF-M/issues">
+        <img alt="Issues" src="https://img.shields.io/github/issues/OpenRLHF/OpenRLHF-M?color=0088ff" />
       </a>
-      <a href="https://github.com/OpenRLHF/OpenRLHF/discussions">
-        <img alt="Issues" src="https://img.shields.io/github/discussions/OpenRLHF/OpenRLHF?color=0088ff" />
+      <a href="https://github.com/OpenRLHF/OpenRLHF-M/pulls">
+        <img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/OpenRLHF/OpenRLHF-M?color=0088ff" />
       </a>
-      <a href="https://github.com/OpenRLHF/OpenRLHF/pulls">
-        <img alt="GitHub pull requests" src="https://img.shields.io/github/issues-pr/OpenRLHF/OpenRLHF?color=0088ff" />
-      <a href="https://github.com/OpenRLHF/OpenRLHF/stargazers">
-        <img alt="GitHub stars" src="https://img.shields.io/github/stars/OpenRLHF/OpenRLHF?color=ccf" />
+      <a href="https://github.com/OpenRLHF/OpenRLHF-M/stargazers">
+        <img alt="GitHub stars" src="https://img.shields.io/github/stars/OpenRLHF/OpenRLHF-M?color=ccf" />
       </a>
       <br>
       <em>Open-source / Comprehensive / Lightweight / Easy-to-use</em>
@@ -38,6 +39,8 @@ OpenRLHF is a high-performance RLHF framework built on Ray, DeepSpeed and HF Tra
 More details are in [Slides](https://docs.google.com/presentation/d/1JRhB1d7csofx0PIZBmfyBdMluxNd5JLPpUHrrvVhGnk/edit?usp=sharing) | [Technical Report](https://arxiv.org/abs/2405.11143) | [Documents](https://openrlhf.readthedocs.io/)
 
 ## News
+- [2025/2] [Logic-RL](https://arxiv.org/abs/2502.14768) and [PRIME](https://arxiv.org/abs/2502.01456) demonstrate that REINFORCE++ is more stable in training compared to GRPO and faster than PPO.
+- [2025/2] StepFunc implements a [single-controller version of OpenRLHF](https://github.com/Open-Reasoner-Zero/Open-Reasoner-Zero).
 - [2025/2] [LMM-R1](https://github.com/TideDra/lmm-r1) is a fork of OpenRLHF, aimed at providing high-performance RL infrastructure for reproduction of DeepSeek-R1 on multimodal tasks.
 - [2025/2] MIT & Microsoft proposed the [On the Emergence of Thinking in LLMs I: Searching for the Right Intuition](https://arxiv.org/pdf/2502.06773) using OpenRLHF
 - [2025/1] HKUST reproduced the [DeepSeek-R1-Zero and DeepSeek-R1 training on small models using OpenRLHF](https://github.com/hkust-nlp/simpleRL-reason)
@@ -348,8 +351,8 @@ ray job submit --address="http://127.0.0.1:8265" \
   --gradient_checkpointing \
   --use_wandb {wandb_token}
 
-# Support REINFORCE++  | RLOO | REINFORCE++-baseline
-# --advantage_estimator reinforce | rloo | reinforce_baseline
+# Support REINFORCE++  | RLOO | REINFORCE++-baseline | GRPO
+# --advantage_estimator reinforce | rloo | reinforce_baseline | group_norm
 
 # Support remote reward model (HTTP)
 # --remote_rm_url http://localhost:5000/get_reward
@@ -493,6 +496,7 @@ We would like to express our gratitude to the following projects and organizatio
 - [Ray ↗](https://github.com/ray-project/ray)
 
 Our project would also like to thank [ColossalChat](https://github.com/hpcaitech/ColossalAI/tree/main/applications/Chat) and [DeepSpeedChat](https://github.com/microsoft/DeepSpeedExamples/tree/master/applications/DeepSpeed-Chat). In the early stages of the project, we referred to their code design. 
+Our project would like to thank [Netmind.AI](https://www.netmind.ai/) for the GPU support of developing ring attention.
 
 (2024/7) Our GitHub organization has changed from OpenLLMAI to OpenRLHF.
 
